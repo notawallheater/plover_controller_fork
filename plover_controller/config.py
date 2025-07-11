@@ -1,3 +1,4 @@
+from plover import log
 import re
 from dataclasses import dataclass
 from .util import get_keys_for_stroke
@@ -27,6 +28,7 @@ class Alias:
 @dataclass
 class Mappings:
     sticks: dict[str, Stick]
+    stick_axes: list[str]
     hats: dict[str, Alias]
     buttons: dict[str, Alias]
     triggers: dict[str, Alias]
@@ -37,6 +39,7 @@ class Mappings:
     def empty(cls) -> "Mappings":
         return Mappings(
             sticks={},
+            stick_axes={},
             hats={},
             buttons={},
             triggers={},
@@ -66,7 +69,8 @@ class Mappings:
                 lhs = match[1].split(",")
                 rhs = get_keys_for_stroke(match[2])
                 result.unordered_mappings.append((lhs, rhs))
-            elif match := re.match(r"(\w+)\(([a-z,]+)\) -> ([A-Z-*#]+)", line):
+#            elif match := re.match(r"(\w+)\(([a-z,]+)\) -> ([A-Z-*#]+)", line):
+            elif match := re.match(r"(\w+)\(([a-z,]+)\) -> (.*)", line):
                 result.ordered_mappings[
                     tuple(f"{match[1]}{pos}" for pos in match[2].split(","))
                 ] = get_keys_for_stroke(match[3])
@@ -90,4 +94,9 @@ class Mappings:
                 result.triggers[alias.actual] = alias
             else:
                 print(f"don't know how to parse '{line}', skipping")
+        
+        result.stick_axes = {axis: stick
+            for stick in result.sticks.values()
+            for axis in (stick.x_axis, stick.y_axis)
+        }
         return result

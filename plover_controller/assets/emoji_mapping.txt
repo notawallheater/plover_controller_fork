@@ -386,6 +386,8 @@ right(ur,u,ul,u) -> -FL
 // MOREMOTION
 //revolutions
 left(ur,u,ul,dl,d,dr,ur) -> #-
+left(u,ul,dl,d,dr,ur,u) -> 🐔
+left(ul,dl,d,dr,ur,u,ul) -> 🦐
 
 //circles
 left(u,ur,dr,d,dl,ul) ->

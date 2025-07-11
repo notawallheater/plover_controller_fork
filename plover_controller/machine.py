@@ -1,5 +1,4 @@
-# This file is part of plover-controller.
-# Copyright (C) 2022 Tadeo Kondrak
+# This file is part of plover-controller.  # Copyright (C) 2022 Tadeo Kondrak
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,11 +13,18 @@
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+# {{{ imports
+
+
+#from collections import OrderedDict
 from dataclasses import dataclass
-import itertools
-from math import cos, sin, sqrt, tau
+from math import cos, sin, tau, hypot
 import sdl2
 import threading
+from threading import Timer
+from time import sleep
+from uuid import UUID, uuid4
 import ctypes
 import typing
 from plover_controller.config import (
@@ -27,9 +33,13 @@ from plover_controller.config import (
 )
 from .util import stick_segment, buttons_to_keys
 from copy import copy
+#from plover import system
+#from plover.config import system_keymap_option, Config
 from plover.engine import StenoEngine
 from plover.gui_qt.tool import Tool
+from plover import log
 from plover.machine.base import StenotypeBase
+#from plover.machine.keymap import Keymap
 from plover.misc import boolean
 from plover.resource import resource_exists, resource_filename
 from PyQt5.QtCore import QVariant, pyqtSignal, Qt, QSize, QLineF, QPointF, QRectF
@@ -75,10 +85,15 @@ from sdl2 import (
     SDL_RegisterEvents,
     SDL_SetHint,
     SDL_WaitEvent,
+#    SDL_AddTimer,
+#    SDL_TimerCallback,
+#    SDL_INIT_TIMER,
 )
 
 SDL_strdup_void = sdl2.dll._bind("SDL_strdup", [ctypes.c_char_p], ctypes.c_void_p)
+# }}}
 
+# {{{ mapping
 HAT_VALUES = {
     SDL_HAT_CENTERED: "c",
     SDL_HAT_UP: "u",
@@ -98,12 +113,25 @@ if not resource_exists(mapping_path):
 with open(typing.cast(str, resource_filename(mapping_path)), "r") as f:
     DEFAULT_MAPPING = f.read()
 
+# }}}
 
+
+# {{{ event classes
 @dataclass
 class Event:
+    maybe_stroke_complete_event: Optional[int] = None
+
+    
     @classmethod
     def from_sdl(cls, ev: SDL_Event) -> Optional["Event"]:
-        if ev.type == sdl2.SDL_JOYAXISMOTION:
+        if ev.type == cls.maybe_stroke_complete_event:
+            _char_p = ctypes.cast(ev.user.data1, ctypes.c_char_p)
+            _py_string = _char_p.value.decode('utf-8')
+            SDL_free(ev.user.data1)
+            return CheckCompleteEvent(
+                stickname=_py_string,
+            )
+        elif ev.type == sdl2.SDL_JOYAXISMOTION:
             return AxisEvent(
                 axis=ev.jaxis.axis,
                 value=float(ev.jaxis.value) / 32768,
@@ -145,38 +173,43 @@ class Event:
 
 
 @dataclass
+class CheckCompleteEvent(Event):
+    stickname: str = ""
+    
+@dataclass
 class AxisEvent(Event):
-    axis: int
-    value: float
-    device: int
+    axis: int = -1
+    value: float = 0.0
+    device: int = -1
 
 
 @dataclass
 class BallEvent(Event):
-    ball: int
-    device: int
+    ball: int = -1
+    device: int = -1
 
 
 @dataclass
 class HatEvent(Event):
-    hat: int
-    value: int
-    device: int
+    hat: int = -1
+    value: int = -1
+    device: int = -1
 
 
 @dataclass
 class ButtonEvent(Event):
-    button: int
-    state: bool
-    device: int
+    button: int = -1
+    state: bool = False
+    device: int = -1
 
 
 @dataclass
 class DeviceEvent(Event):
-    which: int
-    added: bool
+    which: int = -1
+    added: bool = False
+# }}}
 
-
+# {{{ controller thread
 controller_thread_instance = None
 
 
@@ -188,6 +221,12 @@ def get_controller_thread():
     controller_thread_instance.start()
     return controller_thread_instance
 
+def get_sdl_error():
+    error = typing.cast(bytes, SDL_GetError())
+    if error:
+        raise Exception(f"SDL error occurred: {error.decode('utf-8')}")
+    else:
+        raise Exception("Unknown SDL error occurred")
 
 class ControllerThread(threading.Thread):
     lock = threading.Lock()
@@ -202,8 +241,9 @@ class ControllerThread(threading.Thread):
             SDL_Quit()
             SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, b"1")
             SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, b"1")
-            SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)
+            SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) #| SDL_INIT_TIMER)
             self.set_hint_event_type = SDL_RegisterEvents(1)
+            Event.maybe_stroke_complete_event = SDL_RegisterEvents(1)
 
             for i in range(typing.cast(int, SDL_NumJoysticks())):
                 SDL_JoystickOpen(i)
@@ -211,11 +251,7 @@ class ControllerThread(threading.Thread):
         event = SDL_Event()
         while True:
             if not SDL_WaitEvent(event):
-                error = typing.cast(bytes, SDL_GetError())
-                if error:
-                    raise Exception(f"SDL error occurred: {error.decode('utf-8')}")
-                else:
-                    raise Exception("Unknown SDL error occurred")
+                get_sdl_error()
             with self.lock:
                 if event.type == self.set_hint_event_type:
                     SDL_SetHint(
@@ -247,22 +283,32 @@ class ControllerThread(threading.Thread):
             event.user.data1 = SDL_strdup_void(name)
             event.user.data2 = SDL_strdup_void(value)
             SDL_PushEvent(event)
+# }}}
 
+# {{{ controller state
 
 class ControllerState:
     # Machine settings
     _params: dict[str, Any] = {}
     # Parsed configuration file
-    _mappings: Mappings = Mappings.empty()
+    #_mappings: Mappings = Mappings.empty() #Mappings.parse creates instance
+    _mappings: Mappings = None
     # Last received axis values for mapped sticks, keyed by a{int}
     _stick_states: dict[str, float] = {}
+    _stick_listening: dict[str, bool] = {}
+    _stick_active: dict[str, bool] = {}
+    # Whether a stick was in the deadzone in the previous check
+    _fresh_from_deadzone: dict[str, bool] = {}
+    _fresh_from_holdzone: dict[str, bool] = {}
     # Last received axis values for mapped triggers, keyed by a{int}
     _trigger_states: dict[str, float] = {}
     # Last received values for hats, keyed by alias
     _hat_states: dict[str, int] = {}
     # Keys fully triggered by completed chords
     _pending_keys: set[str] = set()
-    _pending_stick_movements: dict[str, list[str]] = {}
+#    _pending_stick_movements: dict[str, list[str]] = {}
+    _pending_stick_movements: dict[str, list[list[str]]] = {}
+    _previous_segments: dict[str, int] = {}
     _pending_hat_values: dict[str, set[int]] = {}
     _unsequenced_buttons_and_hats: set[str] = set()
     # All buttons currently pressed
@@ -270,17 +316,21 @@ class ControllerState:
     _currently_uncentered_hats: set[str] = set()
     # Function called with stroke data when complete
     _notify: Callable[[list[str]], None]
-    # Whether a stick was in the deadzone in the previous check
-    _fresh_from_deadzone: dict[str, bool] = {}
+    # timers for delayed callbacks
+    _timers: dict[UUID] = {}
 
     def __init__(self, params: dict[str, Any], notify: Callable[[list[str]], None]):
         super().__init__()
         self._params = params
         self._mappings = Mappings.parse(self._params["mapping"])
+        self._pending_stick_movements = {stick.name: [[]] for stick in self._mappings.sticks.values()}
+        log.error(f"init psm is : {self._pending_stick_movements}")
         self._notify = notify
 
     def _handle_event(self, event: Event):
-        if isinstance(event, AxisEvent):
+        if isinstance(event, CheckCompleteEvent):
+            self._handle_checkcomplete_event(event)
+        elif isinstance(event, AxisEvent):
             self._handle_axis_event(event)
         elif isinstance(event, BallEvent):
             self._handle_ball_event(event)
@@ -295,14 +345,10 @@ class ControllerState:
         axis = f"a{event.axis}"
         if axis in self._mappings.triggers:
             self._trigger_states[axis] = event.value
-        elif axis in set(
-            itertools.chain(
-                map(lambda stick: stick.x_axis, self._mappings.sticks.values()),
-                map(lambda stick: stick.y_axis, self._mappings.sticks.values()),
-            ),
-        ):
+            self.check_trigger_axes()
+        elif axis in self._mappings.stick_axes:
             self._stick_states[axis] = event.value
-        self.check_axes()
+            self.check_stick(self._mappings.stick_axes[axis])
         self.maybe_complete_stroke()
 
     def _handle_ball_event(self, event: BallEvent):
@@ -356,9 +402,11 @@ class ControllerState:
 
     def any_active_inputs(self):
         return (
-            any(
-                abs(v) > self._params["stroke_end_threshold"]
-                for v in self._stick_states.values()
+            any(self._stick_listening.get(stick.name, False)
+                    or
+                self._stick_active.get(stick.name, False)
+                    for
+                stick in self._mappings.sticks.values()
             )
             or any(v > 0 for v in self._trigger_states.values())
             or self._currently_pressed_buttons
@@ -366,8 +414,6 @@ class ControllerState:
         )
 
     def process_stick_movements(self):
-        if self.any_active_inputs():
-            return
 
         def process(start_idx, end_idx):
             if start_idx == end_idx:
@@ -383,82 +429,119 @@ class ControllerState:
                     process(start_idx, end_idx - 1)
 
         for stick in self._mappings.sticks.values():
-            pending_movements = self._pending_stick_movements.get(stick.name, [])
-            if (
-                result := self._mappings.ordered_mappings.get(tuple(pending_movements))
-            ) is not None:
-                self._pending_stick_movements[stick.name] = []
-                self._pending_keys.update(result)
-            else:
-                for key in pending_movements:
-                    self._unsequenced_buttons_and_hats.add(key)
+            for pending_movements in self._pending_stick_movements[stick.name]:
+                process(0, len(pending_movements))
+            self._pending_stick_movements[stick.name] = [[]]
 
-        for stick in self._mappings.sticks.values():
-            pending_movements = self._pending_stick_movements.get(stick.name, [])
-            process(0, len(pending_movements))
-            self._pending_stick_movements[stick.name] = []
+
 
     def maybe_complete_stroke(self):
-        self.process_stick_movements()
         if self.any_active_inputs():
             return
+        self.process_stick_movements()
         keys = buttons_to_keys(
             self._unsequenced_buttons_and_hats,
             self._mappings.unordered_mappings,
         ).union(self._pending_keys)
         self._unsequenced_buttons_and_hats.clear()
-        self._pending_stick_movements.clear()
         self._pending_keys.clear()
         if keys:
             self._notify(list(keys))
 
-    def check_axes(self):
-        for stick in self._mappings.sticks.values():
-            lr = self._stick_states.get(stick.x_axis, 0.0)
-            ud = self._stick_states.get(stick.y_axis, 0.0)
-            self.check_stick(stick, lr, ud)
+
+    def check_trigger_axes(self):
         for trigger in self._mappings.triggers.values():
             val = self._trigger_states.get(trigger.actual, 0)
             if val > 0:
                 self._unsequenced_buttons_and_hats.add(trigger.renamed)
 
-    def check_stick(self, stick: Stick, lr: float, ud: float):
-        segment_index = stick_segment(
-            stick_dead_zone=self._params["stick_dead_zone"],
+    def _handle_checkcomplete_event(self, ev:CheckCompleteEvent):
+        self._stick_listening[ev.stickname] = False
+        self.maybe_complete_stroke()
+
+        
+
+    def stick_timeout_cb(self, stickname: str, timer_id: UUID):
+        event = SDL_Event()
+        event.type = Event.maybe_stroke_complete_event
+        event.user.data1 = SDL_strdup_void(stickname.encode('utf-8'))
+        SDL_PushEvent(event)
+        del self._timers[timer_id]
+        
+
+    def add_timer(self, stick: Stick):
+        t_id = uuid4()
+        t = Timer(self._params["stick_timeout"] / 1000.0, self.stick_timeout_cb, [stick.name, t_id])
+        self._timers[t_id] = t
+        t.start()
+
+
+#    def check_stick(self, stick: Stick, lr: float, ud: float):
+    def check_stick(self, stick: Stick):
+
+        lr = self._stick_states.get(stick.x_axis, 0.0)
+        ud = self._stick_states.get(stick.y_axis, 0.0)
+        d = hypot(lr, ud)
+
+
+        if ((d < self._params["stroke_end_threshold"])
+            and self._stick_active.get(stick.name, False)
+            and not self._stick_listening.get(stick.name, False)
+        ):
+            self.add_timer(stick)
+            self._stick_listening[stick.name] = True
+            self._stick_active[stick.name] = False
+            self._pending_stick_movements[stick.name].append([])
+            
+
+        if d < self._params["stick_dead_zone"]:
+            self._fresh_from_deadzone[stick.name] = True
+            self._fresh_from_holdzone[stick.name] = False
+            self._previous_segments[stick.name] = None
+        elif d < self._params["stick_hold_zone"]:
+            self._fresh_from_holdzone[stick.name] = True
+        elif (segment_index := stick_segment(
             offset=stick.offset,
             segment_count=len(stick.segments),
+            previous_segment=self._previous_segments.get(stick.name),
+            jitter_guard=self._params["jitter_guard"],
             lr=lr,
-            ud=ud,
-        )
-        if stick.name not in self._pending_stick_movements:
-            self._pending_stick_movements[stick.name] = []
-        if stick.name not in self._fresh_from_deadzone:
-            self._fresh_from_deadzone[stick.name] = True
-        if segment_index is not None:
+            ud=ud)
+        ) is not None:
+            self._previous_segments[stick.name]=segment_index
             direction = stick.segments[segment_index]
             segment_name = f"{stick.name}{direction}"
-            inorder_list = self._pending_stick_movements[stick.name]
-            if len(inorder_list) == 0 or segment_name != inorder_list[-1]:
+            inorder_list = self._pending_stick_movements[stick.name][-1]
+            if (len(inorder_list) == 0 or
+                segment_name != inorder_list[-1] or
+                self._fresh_from_holdzone[stick.name]
+            ):
                 inorder_list.append(segment_name)
+            self._stick_active[stick.name] = True
             self._fresh_from_deadzone[stick.name] = False
-        else:
-            self._fresh_from_deadzone[stick.name] = True
+            self._fresh_from_holdzone[stick.name] = False
+# }}}
 
+
+# {{{ controller machine
 
 class ControllerMachine(StenotypeBase):
-    KEYMAP_MACHINE_TYPE = "TX Bolt"
-    KEYS_LAYOUT = """
-        #  #  #  #  #  #  #  #  #  #
-        S- T- P- H- * -F -P -L -T -D
-        S- K- W- R- * -R -B -G -S -Z
-               A- O- -E -U
-    """
+
+    KEYS_LAYOUT = '''
+        #
+        🎮- 🎹- 🦐- 🐦- 🦅-
+        S- T- K- P- W- H- R-
+        A- O-
+        *
+        -E -U
+        -F -R -P -B -L -G -T -S -D -Z
+    '''
 
     _state: ControllerState
 
     def __init__(self, params: dict[str, Any]):
         super().__init__()
-        self._state = ControllerState(params, self._wrap_notify)
+        ControllerMachine._state = ControllerState(params, self._wrap_notify)
 
     def _wrap_notify(self, keys: list[str]):
         self._notify(self.keymap.keys_to_actions(keys))
@@ -487,16 +570,21 @@ class ControllerMachine(StenotypeBase):
     def get_option_info(cls) -> dict[str, tuple[Any, Callable[[str], Any]]]:
         return {
             "mapping": (DEFAULT_MAPPING, str),
-            "timeout": (1.0, float),
-            "stick_dead_zone": (0.6, float),
-            "trigger_dead_zone": (0.9, float),
+            "stick_timeout": (100, int),
             "stroke_end_threshold": (0.4, float),
+            "stick_dead_zone": (0.6, float),
+            "stick_hold_zone": (0.9, float),
+            "trigger_dead_zone": (0.9, float),
+            "jitter_guard": (0.3, float),
             "use_hidapi": (True, boolean),
             "use_rawinput": (False, boolean),
             "correlate_rawinput": (False, boolean),
             "use_joystick_thread": (False, boolean),
         }
 
+# }}}
+
+# {{{ gui
 
 class ControllerOption(QGroupBox):
     axis_message = pyqtSignal(str)
@@ -509,10 +597,12 @@ class ControllerOption(QGroupBox):
     _check_boxes = {}
 
     SPIN_BOXES = {
-        "timeout": "Timeout:",
+        "stroke_end_threshold": "Stick stroke end threshold ([0-1]):",
         "stick_dead_zone": "Stick dead zone:",
+        "stick_timeout": "Stick dead zone timeout (milliseconds)",
+        "stick_hold_zone": "Stick hold zone:",
+        "jitter_guard": "Stick jitter guard (radians):",
         "trigger_dead_zone": "Trigger dead zone:",
-        "stroke_end_threshold": "Stroke end threshold:",
     }
 
     CHECK_BOXES = {
@@ -594,7 +684,7 @@ class ControllerOption(QGroupBox):
         if isinstance(ev, AxisEvent):
             if ev.value < 0.25:
                 return
-            message = f"Axis {ev.axis} motion (device: {ev.device})"
+            message = f"Axis {ev.axis} motion (device: {ev.device}, value: {ev.value:.4f})"
             if message != self._last_axis_message:
                 try:
                     self.axis_message.emit(message)
@@ -696,9 +786,9 @@ class StickWidget(QWidget):
         painter.drawLine(QLineF(convx(0), convy(0), convx(x), convy(y)))
 
         painter.setPen(QPen(Qt.GlobalColor.lightGray, 1, Qt.PenStyle.DotLine))
-        draw_deadzone(self.state._params["stroke_end_threshold"] * sqrt(2))
+        draw_deadzone(self.state._params["stroke_end_threshold"])
         painter.setPen(QPen(Qt.GlobalColor.darkGray, 1, Qt.PenStyle.DotLine))
-        draw_deadzone(self.state._params["stick_dead_zone"] * sqrt(2))
+        draw_deadzone(self.state._params["stick_dead_zone"])
 
         angle = self.stick.offset / 360 * tau - tau / 4
         step = tau / len(self.stick.segments)
@@ -778,3 +868,4 @@ class ControllerDisplayTool(Tool):
         self._state._handle_event(event)
         if not self._dying:
             self.update()
+# }}}

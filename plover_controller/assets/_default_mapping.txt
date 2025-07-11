@@ -1,9 +1,7 @@
 left stick has segments (dr,d,dl,ul,u,ur) on axes 0 and 1 offset by 0 degrees
-right stick has segments (dr,d,dl,ul,u,ur) on axes 2 and 3 offset by 0 degrees
+right stick has segments (dr,d,dl,ul,u,ur) on axes 3 and 4 offset by 0 degrees
 
-hat 0 is dp
-
-trigger on axis 4 is lefttrigger
+trigger on axis 2 is lefttrigger
 trigger on axis 5 is righttrigger
 
 button 0 is a
@@ -14,11 +12,10 @@ button 4 is leftshoulder
 button 5 is rightshoulder
 button 6 is back
 button 7 is start
-button 8 is leftstick
-button 9 is rightstick
-button 10 is start
-button 11 is arrowbucket
-//button 11 is paddle1
+button 8 is guide
+button 9 is leftstick
+button 10 is rightstick
+button 11 is paddle1
 button 12 is paddle2
 button 13 is paddle3
 button 14 is paddle4
@@ -30,21 +27,16 @@ y -> -D
 back -> *
 // guide ->
 start -> #
-arrowbucket -> #
 leftstick -> S-
 rightstick -> *
 lefttrigger -> A-
 leftshoulder -> O-
 rightshoulder -> -E
 righttrigger -> -U
-dpu -> #
-dpd -> -D
-dpl -> -Z
-dpr -> -T
-dpdl -> KWR-
-dpdr -> -S
-dpul -> -SZ
-dpur -> -TS
+// dpup ->
+// dpdown ->
+// dpleft ->
+// dpright ->
 // misc1 ->
 paddle1 -> -E
 paddle2 -> -U
@@ -64,10 +56,6 @@ rightul -> -F
 rightu -> -P
 rightur -> -L
 
-
-
-
-//default plugin motions
 left(d,dl,ul,dl) -> TW-
 left(d,dl,ul,u,ul) -> KPW-
 left(d,dl,ul,u,ul,dl,d) -> PW-
@@ -381,167 +369,3 @@ right(ur,u,ul,dl,ul,u,ur) -> -RL
 right(ur,u,ul,dl,ul) -> -RPL
 right(ur,u,ul,dl) -> -RL
 right(ur,u,ul,u) -> -FL
-
-
-// MOREMOTION
-//revolutions
-left(ur,u,ul,dl,d,dr,ur) -> #-
-
-//circles
-left(u,ur,dr,d,dl,ul) ->
-left(ur,dr,d,dl,ul,u) ->
-left(dr,d,dl,ul,u,ur) ->
-left(d,dl,ul,u,ur,dr) -> TKPWHR-
-left(dl,ul,u,ur,dr,d) -> TKPWHR-
-left(ul,u,ur,dr,d,dl) -> TKPWHR-
-
-left(u,ul,dl,d,dr,ur) -> TKPWHR-
-left(ul,dl,d,dr,ur,u) -> TKPWHR-
-left(dl,d,dr,ur,u,ul) ->
-left(d,dr,ur,u,ul,dl) ->
-left(dr,ur,u,ul,dl,d) ->
-left(ur,u,ul,dl,d,dr) -> TKPWHR-
-
-right(u,ur,dr,d,dl,ul) ->
-right(ur,dr,d,dl,ul,u) ->
-right(dr,d,dl,ul,u,ur) ->
-right(d,dl,ul,u,ur,dr) -> -FRPBLG
-right(dl,ul,u,ur,dr,d) -> -FRPBLG
-right(ul,u,ur,dr,d,dl) -> -FRPBLG
-
-right(u,ul,dl,d,dr,ur) -> -FRPBLG
-right(ul,dl,d,dr,ur,u) -> -FRPBLG
-right(dl,d,dr,ur,u,ul) ->
-right(d,dr,ur,u,ul,dl) ->
-right(dr,ur,u,ul,dl,d) ->
-right(ur,u,ul,dl,d,dr) -> -FRPBLG
-
-//5 inorder
-left(d,dl,ul,u,ur) -> TKPWH-
-right(d,dl,ul,u,ur) -> FRPBL-
-
-
-//4 inorder squares
-left(dl,d,dr,ur) -> KWHR-
-left(dl,ul,u,ur) -> TKPH-
-left(ul,dl,d,dr) -> TKWR-
-left(ul,u,ur,dr) -> TPHR-
-left(u,ul,dl,d) -> TKPW-
-left(u,ur,dr,d) -> PWHR-
-
-right(dl,d,dr,ur) -> -RBLG
-right(dl,ul,u,ur) -> -FRPL
-right(ul,dl,d,dr) -> -FRBG
-right(ul,u,ur,dr) -> -FPLG
-right(u,ul,dl,d) -> -FRPB
-right(u,ur,dr,d) -> -PBLG
-
-
-//3-1
-// left(u,ur,dr,d,dl) -> KPR-
-// left(ur,dr,d,dl,ul) -> TWH-
-left(u,ur,dr,d,dl) -> KPWH-
-left(ur,dr,d,dl,ul) -> TKHR-
-left(d,dr,ur,u,ul) -> TPWR-
-left(dr,d,dl,ul,u) -> TPWR-
-left(dr,ur,u,ul,dl) -> TKHR-
-left(ur,u,ul,dl,d) -> KPWH-
-
-//right(u,ur,dr,d,dl) -> -RPG
-//right(ur,dr,d,dl,ul) -> -FWL
-right(u,ur,dr,d,dl) -> -RPBL
-right(ur,dr,d,dl,ul) -> -FRLG
-right(d,dr,ur,u,ul) -> -FPBG
-right(dr,d,dl,ul,u) -> -FPBG
-right(dr,ur,u,ul,dl) -> -FRLG
-right(ur,u,ul,dl,d) -> -RPBL
-
-
-//1-1 flick
-left(ul,u,ul) -> TPR-
-left(ul,dl,ul) -> TKR-
-left(dl,ul,dl) -> TKH-
-left(dl,d,dl) -> KWH-
-left(d,dl,d) -> KPW-
-left(d,dr,d) -> PWR-
-left(dr,d,dr) -> TWR-
-left(dr,ur,dr) -> THR-
-left(ur,dr,ur) -> KHR-
-left(ur,u,ur) -> KPH-
-left(u,ur,u) -> PWH-
-left(u,ul,u) -> TPW-
-
-right(ul,u,ul) -> -FPG
-right(ul,dl,ul) -> -FRG
-right(dl,ul,dl) -> -FRL
-right(dl,d,dl) -> -RBL
-right(d,dl,d) -> -RPB
-right(d,dr,d) -> -PBG
-right(dr,d,dr) -> -FBG
-right(dr,ur,dr) -> -FLG
-right(ur,dr,ur) -> -RLG
-right(ur,u,ur) -> -RPL
-right(u,ur,u) -> -PBL
-right(u,ul,u) -> -FPB
-
-//1-2 overshoots
-left(ul,u,ul,dl) -> TPR-
-left(ul,dl,ul,u) -> TKR-
-left(dl,ul,dl,d) -> TKH-
-left(dl,d,dl,ul) -> KWH-
-left(d,dl,d,dr) -> KPW-
-left(d,dr,d,dl) -> PWR-
-left(dr,d,dr,ur) -> TWR-
-left(dr,ur,dr,d) -> THR-
-left(ur,dr,ur,u) -> KHR-
-left(ur,u,ur,dr) -> KPH-
-left(u,ur,u,ul) -> PWH-
-left(u,ul,u,ur) -> TPW-
-
-right(ul,u,ul,dl) -> -FPG
-right(ul,dl,ul,u) -> -FRG
-right(dl,ul,dl,d) -> -FRL
-right(dl,d,dl,ul) -> -RBL
-right(d,dl,d,dr) -> -RPB
-right(d,dr,d,dl) -> -PBG
-right(dr,d,dr,ur) -> -FBG
-right(dr,ur,dr,d) -> -FLG
-right(ur,dr,ur,u) -> -RLG
-right(ur,u,ur,dr) -> -RPL
-right(u,ur,u,ul) -> -PBL
-right(u,ul,u,ur) -> -FPB
-
-
-left(dl,ul,u,ul) -> TKPR-
-left(u,ul,dl,ul) -> KPR-
-left(d,dl,ul,dl) -> TWH-
-left(ul,dl,d,dl) -> TKWH-
-left(dr,d,dl,d) -> KPR-
-left(dl,d,dr,d) -> KPWR-
-left(ur,dr,d,dr) -> TWH-
-left(d,dr,ur,dr) -> TWHR-
-left(u,ur,dr,ur) -> KPHR-
-left(dr,ur,u,ur) -> KPR-
-left(ul,u,ur,u) -> TPWH-
-left(ur,u,ul,u) -> TWH-
-
-right(dl,ul,u,ul) -> -FRPG
-right(u,ul,dl,ul) -> -RPG
-right(d,dl,ul,dl) -> -FBL
-right(ul,dl,d,dl) -> -FRBL
-right(dr,d,dl,d) -> -RPG
-right(dl,d,dr,d) -> -RPBG
-right(ur,dr,d,dr) -> -FBL
-right(d,dr,ur,dr) -> -FBLG
-right(u,ur,dr,ur) -> -RPLG
-right(dr,ur,u,ur) -> -RPG
-right(ul,u,ur,u) -> -FPBL
-right(ur,u,ul,u) -> -FBL
-
-
-//taps
-left(u,u) -> A-
-left(ul,ul) -> O-
-
-right(u,u) -> -U
-right(ur,ur) -> -E
